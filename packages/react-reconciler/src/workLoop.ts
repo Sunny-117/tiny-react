@@ -1,12 +1,36 @@
 import { beginWork } from './beginWork';
 import { completeWork } from './completeWork';
-import { FiberNode } from './fiber';
+import { FiberNode, FiberRootNode, createWorkInProgress } from './fiber';
+import { HostRoot } from './workTags';
 
 let workInProgress: FiberNode | null = null;
-function prepareFreshStack(fiber: FiberNode) {
-	workInProgress = fiber;
+function prepareFreshStack(root: FiberRootNode) {
+	workInProgress = createWorkInProgress(root.current, {});
 }
-function renderRoot(root: FiberNode) {
+/**
+ * 在fiber中调度update
+ */
+export function scheduleUpdateOnFiber(fiber: FiberNode) {
+	// 调度功能
+	// fiberRootNode
+	const root = markUpdateFromFiberToRoot(fiber); // 当前触发更新的fiber一直遍历到fiberRootNode
+	renderRoot(root);
+}
+
+function markUpdateFromFiberToRoot(fiber: FiberNode) {
+	let node = fiber;
+	let parent = node.return;
+	while (parent !== null) {
+		node = parent;
+		parent = node.return;
+	}
+	if (node.tag === HostRoot) {
+		return node.stateNode;
+	}
+	return null;
+}
+
+function renderRoot(root: FiberRootNode) {
 	// 初始化
 	prepareFreshStack(root);
 	do {
@@ -26,7 +50,7 @@ function workLoop() {
 }
 function performUnitOfWork(fiber: FiberNode) {
 	// next可能是子fiber，也可能是null
-	const next = beginWork(fiber);
+	const next = beginWork(fiber); // 向下递阶段
 	fiber.memoizedProps = fiber.pendingProps;
 	if (next === null) {
 		completeUnitOfWork(fiber);
@@ -40,7 +64,7 @@ function completeUnitOfWork(fiber: FiberNode) {
 	// 如果没有，就遍历兄弟节点
 	let node: FiberNode | null = fiber;
 	do {
-		completeWork(node);
+		completeWork(node); // 向上归阶段
 		const sibling = node.sibling;
 		if (sibling !== null) {
 			workInProgress = sibling;

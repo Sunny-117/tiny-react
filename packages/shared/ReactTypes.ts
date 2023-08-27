@@ -12,3 +12,10 @@ export interface ReactElementType {
 	ref: Ref;
 	__mark: string;
 }
+
+/**
+ * 两种触发更新的方式
+ * this.setState({ name: 'xxx' })
+ * this.setState(prevState => ({ name: prevState.name + 'xxx' }))
+ */
+export type Action<State> = State | ((prevState: State) => State);
