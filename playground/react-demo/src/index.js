@@ -1,7 +1,7 @@
 import React from 'react';
 const jsx = (
 	<div>
-		hello, <span>tiny-react</span>
+		hello, <span ref>tiny-react</span>
 	</div>
 );
 
