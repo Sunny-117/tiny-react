@@ -37,10 +37,16 @@ function renderRoot(root: FiberRootNode) {
 		try {
 			workLoop();
 		} catch (error) {
-			console.warn('workLoop发生错误', e);
+			if (__DEV__) {
+				console.warn('workLoop发生错误', error);
+			}
 			workInProgress = null;
 		}
 	} while (true);
+	const finishedWork = root.current.alternate;
+	root.finishedWork = finishedWork;
+	// 根据wip fiberNode树 和 树种的flags执行具体的操作
+	// commitRoot(root);
 }
 
 function workLoop() {
