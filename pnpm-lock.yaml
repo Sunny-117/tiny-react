@@ -9,7 +9,7 @@ importers:
       '@babel/preset-env': ^7.20.2
       '@commitlint/cli': ^17.1.2
       '@commitlint/config-conventional': ^17.1.0
-      '@rollup/plugin-alias': ^4.0.2
+      '@rollup/plugin-alias': ^4.0.4
       '@rollup/plugin-commonjs': ^23.0.0
       '@rollup/plugin-replace': ^5.0.1
       '@types/react': ^18.0.24
@@ -77,6 +77,14 @@ importers:
     dependencies:
       shared: link:../shared
 
+  packages/react-dom:
+    specifiers:
+      react-reconciler: workspace:*
+      shared: workspace:*
+    dependencies:
+      react-reconciler: link:../react-reconciler
+      shared: link:../shared
+
   packages/react-reconciler:
     specifiers:
       shared: workspace:^1.0.0
@@ -89,11 +97,11 @@ importers:
   playground/react-demo:
     specifiers:
       react: ^1.0.0
-      react-dom: ^18.2.0
+      react-dom: ^1.0.0
       react-scripts: 5.0.1
     dependencies:
       react: link:../../packages/react
-      react-dom: 18.2.0
+      react-dom: link:../../packages/react-dom
       react-scripts: 5.0.1_150bfab523fd035a59a190e0f76a40e1
 
 packages:
@@ -9743,15 +9751,6 @@ packages:
       - typescript
       - vue-template-compiler
       - webpack
-    dev: false
-
-  /react-dom/18.2.0:
-    resolution: {integrity: sha512-6IMTriUmvsjHUjNtEDudZfuDQUoWXVxKHhlEGSk81n4YFS+r/Kl99wXiwlVXtPBtJenozv2P+hxDsw9eA7Xo6g==}
-    peerDependencies:
-      react: ^18.2.0
-    dependencies:
-      loose-envify: 1.4.0
-      scheduler: 0.23.0
     dev: false
 
   /react-error-overlay/6.0.11:

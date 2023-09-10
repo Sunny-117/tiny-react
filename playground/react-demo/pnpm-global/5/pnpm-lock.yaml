@@ -2,6 +2,8 @@ lockfileVersion: 5.3
 
 specifiers:
   react: ^1.0.0
+  react-dom: ^1.0.0
 
 dependencies:
   react: link:../../../../../../../.nvm/versions/node/v16.14.2/pnpm-global/5/node_modules/react
+  react-dom: link:../../../../../../../.nvm/versions/node/v16.14.2/pnpm-global/5/node_modules/react-dom
