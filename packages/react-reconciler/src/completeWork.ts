@@ -11,8 +11,11 @@ import {
 	HostRoot,
 	HostText
 } from './workTags';
-import { NoFlags } from './fiberFlags';
+import { NoFlags, Update } from './fiberFlags';
 
+function markUpdate(fiber: FiberNode) {
+	fiber.flags |= Update;
+}
 // 递归中的归阶段
 // 构建离屏的dom树
 export const completeWork = (wip: FiberNode) => {
@@ -23,6 +26,7 @@ export const completeWork = (wip: FiberNode) => {
 			if (current !== null && wip.stateNode) {
 				// 对于HostComponent，wip.stateNode保存的是dom节点
 				// update
+				// e.g: className a->b 标记Update
 			} else {
 				// 首屏渲染流程;
 				// 1. 构建dom树
@@ -37,6 +41,11 @@ export const completeWork = (wip: FiberNode) => {
 		case HostText:
 			if (current !== null && wip.stateNode) {
 				// update
+				const oldText = current.memoizedProps.content;
+				const newText = newProps.content;
+				if (oldText !== newText) {
+					markUpdate(wip);
+				}
 			} else {
 				// 首屏渲染流程;
 				// 1. 构建dom树
