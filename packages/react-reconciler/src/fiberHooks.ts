@@ -41,6 +41,7 @@ export function renderWithHooks(wip: FiberNode) {
 }
 
 const HooksDispatcherOnMount: Dispatcher = {
+	// @ts-ignore
 	useState: mountState
 };
 function mountState<State>(
@@ -56,6 +57,7 @@ function mountState<State>(
 	}
 	const queue = createUpdateQueue<State>();
 	hook.updateQueue = queue;
+	hook.memorizedState = memorizedState;
 	// @ts-ignore
 	const dispatch = dispatchSetState.bind(null, currentlyRenderingFiber, queue);
 	queue.dispatch = dispatch;
