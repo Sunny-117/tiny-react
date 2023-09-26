@@ -1,13 +1,20 @@
+import { Props } from 'shared/ReactTypes';
+import { DOMElement, updateFiberProps } from './SyntheticEvent';
+import { FiberNode } from 'react-reconciler/src/fiber';
+import { HostComponent, HostText } from 'react-reconciler/src/workTags';
+
 export type Container = Element;
 export type Instance = Element;
+export type TextInstance = Text;
 
 // export const createInstance = (type: string, props: any): Instance => {
 // 	const element = document.createElement(type);
 // 	return element;
 // };
-export const createInstance = (type: string): Instance => {
-	const element = document.createElement(type);
-	return element;
+export const createInstance = (type: string, props: Props): Instance => {
+	const element = document.createElement(type) as unknown;
+	updateFiberProps(element as DOMElement, props);
+	return element as DOMElement;
 };
 
 export const appendInitialChild = (
@@ -22,3 +29,20 @@ export const createTextInstance = (content: string) => {
 };
 
 export const appendChildToContainer = appendInitialChild;
+
+export function commitUpdate(fiber: FiberNode) {
+	switch (fiber.tag) {
+		case HostText:
+			const text = fiber.memoizedProps.content;
+			return commitTextUpdate(fiber.stateNode, text);
+		default:
+			if (__DEV__) {
+				console.warn('为实现的update类型', fiber);
+			}
+			break;
+	}
+}
+
+export function commitTextUpdate(textInstance: TextInstance, content: string) {
+	textInstance.textContent = content;
+}
