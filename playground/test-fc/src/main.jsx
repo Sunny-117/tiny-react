@@ -5,7 +5,8 @@ function App() {
 	const [num, setNum] = useState(100);
 	return (
 		<div>
-			<h4>{num}</h4>
+			<h4 onClick={() => setNum(num + 1)}>{num}</h4>
+			<h4 onClickCapture={() => setNum(num + 1)}>{num}</h4>
 			<Child />
 		</div>
 	);

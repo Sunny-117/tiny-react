@@ -31,6 +31,8 @@ export const completeWork = (wip: FiberNode) => {
 				// 1. props是否变化了 {onClick: xxx} -> {onClick: yyy}
 				// 2. 变化了 Update flag
 				updateFiberProps(wip.stateNode, newProps);
+				// FiberNode.updateQueue = [className, 'aaa', title, 'hahaha']; [n, n+1]
+				// updateQueue中保存什么东西变了，以及变成了什么
 			} else {
 				// mount 首屏渲染流程;
 				// 1. 构建dom树
