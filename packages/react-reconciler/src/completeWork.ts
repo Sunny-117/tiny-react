@@ -2,10 +2,12 @@ import {
 	Container,
 	appendInitialChild,
 	createInstance,
-	createTextInstance
+	createTextInstance,
+	removeChild
 } from 'hostConfig';
-import { FiberNode } from './fiber';
+import { FiberNode, FiberRootNode } from './fiber';
 import {
+	Fragment,
 	FunctionComponent,
 	HostComponent,
 	HostRoot,
@@ -62,11 +64,11 @@ export const completeWork = (wip: FiberNode) => {
 			bubbleProperties(wip);
 			return null;
 		case HostRoot:
-			bubbleProperties(wip);
-			return null;
 		case FunctionComponent:
+		case Fragment:
 			bubbleProperties(wip);
 			return null;
+
 		default:
 			if (__DEV__) {
 				console.warn('未处理的completeWork情况', wip);
@@ -127,4 +129,106 @@ function bubbleProperties(wip: FiberNode) {
 		child = child.sibling; // 遍历sibling
 	}
 	wip.subtreeFlags |= subtreeFlags;
+}
+
+function commitNestedComponent(
+	root: FiberNode,
+	onCommitUnmount: (fiber: FiberNode) => void
+) {
+	let node = root;
+	while (true) {
+		onCommitUnmount(node);
+
+		if (node.child !== null) {
+			// 向下遍历
+			node.child.return = node;
+			node = node.child;
+			continue;
+		}
+		if (node === root) {
+			// 终止条件
+			return;
+		}
+		while (node.sibling === null) {
+			if (node.return === null || node.return === root) {
+				return;
+			}
+			// 向上归
+			node = node.return;
+		}
+		node.sibling.return = node.return;
+		node = node.sibling;
+	}
+}
+
+function getHostParent(fiber: FiberNode): Container | null {
+	let parent = fiber.return;
+
+	while (parent) {
+		const parentTag = parent.tag;
+		// HostComponent HostRoot
+		if (parentTag === HostComponent) {
+			return parent.stateNode as Container;
+		}
+		if (parentTag === HostRoot) {
+			return (parent.stateNode as FiberRootNode).container;
+		}
+		parent = parent.return;
+	}
+	if (__DEV__) {
+		console.warn('未找到host parent');
+	}
+	return null;
+}
+function commitDeletion(childToDelete: FiberNode) {
+	const rootChildrenToDelete: FiberNode[] = [];
+	// 递归子树
+	commitNestedComponent(childToDelete, (unmountFiber) => {
+		switch (unmountFiber.tag) {
+			case HostComponent:
+				recordHostChildrenToDelete(rootChildrenToDelete, unmountFiber);
+				return;
+			case HostText:
+				recordHostChildrenToDelete(rootChildrenToDelete, unmountFiber);
+				return;
+			case FunctionComponent:
+				// todo
+				return;
+			default:
+				if (__DEV__) {
+					console.warn('未处理的unmount类型', unmountFiber);
+				}
+		}
+	});
+	// 移除rootHostComponent的DOM
+	if (rootChildrenToDelete.length) {
+		const hostParent = getHostParent(childToDelete);
+		if (hostParent !== null) {
+			rootChildrenToDelete.forEach((node) => {
+				removeChild(node.stateNode, hostParent);
+			});
+		}
+	}
+	childToDelete.return = null;
+	childToDelete.child = null;
+}
+
+function recordHostChildrenToDelete(
+	childrenToDelete: FiberNode[],
+	unmountFiber: FiberNode
+) {
+	// 1. 找到第一个root host节点
+	let lastOne = childrenToDelete[childrenToDelete.length - 1];
+	if (!lastOne) {
+		childrenToDelete.push(unmountFiber);
+	} else {
+		let node = lastOne.sibling;
+		while (node !== null) {
+			if (unmountFiber === node) {
+				childrenToDelete.push(unmountFiber);
+			}
+			node = node.sibling;
+		}
+	}
+	// 2. 每找到一个host节点，判断下这个节点是不是第一步找到那个节点的兄弟节点
 }

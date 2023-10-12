@@ -10,9 +10,41 @@ function App() {
 	function DiffTest() {
 		return <ul onClickCapture={() => setNum(num + 1)}>{arr}</ul>;
 	}
+	function FragmentTest() {
+		return (
+			<>
+				<div>1</div>
+				<div>2</div>
+			</>
+		);
+	}
+	function FragmentTest2() {
+		return (
+			<ul>
+				<>
+					<li>1</li>
+					<li>2</li>
+				</>
+				<li>3</li>
+				<li>4</li>
+			</ul>
+		);
+	}
+	function FragmentTest3() {
+		return (
+			<ul onClickCapture={() => setNum(num + 1)}>
+				<li>4</li>
+				<li>5</li>
+				{arr}
+			</ul>
+		);
+	}
 	return (
 		<div>
 			<DiffTest></DiffTest>
+			<FragmentTest></FragmentTest>
+			<FragmentTest2></FragmentTest2>
+			<FragmentTest3></FragmentTest3>
 			<h4 onClick={() => setNum(num + 1)}>{num}</h4>
 			<h4 onClickCapture={() => setNum(num + 1)}>{num}</h4>
 			<Child />
