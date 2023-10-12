@@ -46,3 +46,11 @@ export function commitUpdate(fiber: FiberNode) {
 export function commitTextUpdate(textInstance: TextInstance, content: string) {
 	textInstance.textContent = content;
 }
+
+export function insertChildToContainer(
+	child: Instance,
+	container: Container,
+	before: Instance
+) {
+	container.insertBefore(child, before);
+}
