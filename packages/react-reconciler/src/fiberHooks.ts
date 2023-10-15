@@ -9,6 +9,7 @@ import {
 import { Action } from 'shared/ReactTypes';
 import { scheduleUpdateOnFiber } from './workLoop';
 import { Dispatch, Dispatcher } from 'react/src/currentDispathcer';
+import { requestUpdateLane } from './fiberLanes';
 
 let currentlyRenderingFiber: FiberNode | null = null;
 let workInProgressHook: null | Hook = null;
@@ -68,9 +69,11 @@ function dispatchSetState<State>(
 	updateQueue: UpdateQueue<State>,
 	action: Action<State>
 ) {
-	const update = createUpdate(action);
+	const lane = requestUpdateLane();
+
+	const update = createUpdate(action, lane);
 	enqueueUpdate(updateQueue, update);
-	scheduleUpdateOnFiber(fiber);
+	scheduleUpdateOnFiber(fiber, lane);
 }
 
 function mountWorkInProgressHook(): Hook {

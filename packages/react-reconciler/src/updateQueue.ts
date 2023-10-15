@@ -1,8 +1,11 @@
 import { Dispatch } from 'react/src/currentDispathcer';
 import { Action } from 'shared/ReactTypes';
+import { Lane } from './fiberLanes';
 
 export interface Update<State> {
 	action: Action<State>;
+	// lane: Lane;
+	next: Update<any> | null;
 }
 export interface UpdateQueue<State> {
 	shared: {
@@ -13,9 +16,13 @@ export interface UpdateQueue<State> {
 /**
  * Update实例方法
  */
-export const createUpdate = <State>(action: Action<State>): Update<State> => {
+export const createUpdate = <State>(
+	action: Action<State>,
+	lane: Lane
+): Update<State> => {
 	return {
-		action
+		action,
+		next: null
 	};
 };
 
@@ -35,6 +42,14 @@ export const enqueueUpdate = <State>(
 	updateQueue: UpdateQueue<State>,
 	update: Update<State>
 ) => {
+	const pending = updateQueue.shared.pending;
+	if (pending === null) {
+		// pending=a->a
+		update.next = update;
+	} else {
+		update.next = pending.next;
+		pending.next = update;
+	}
 	updateQueue.shared.pending = update;
 };
 
