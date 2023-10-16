@@ -10,6 +10,8 @@ import { Action } from 'shared/ReactTypes';
 import { scheduleUpdateOnFiber } from './workLoop';
 import { Dispatch, Dispatcher } from 'react/src/currentDispathcer';
 import { Lane, NoLane, requestUpdateLane } from './fiberLanes';
+import { Flags, PassiveEffect } from './fiberFlags';
+import { HookHasEffect, Passive } from './hookEffectTag';
 
 let currentlyRenderingFiber: FiberNode | null = null;
 let workInProgressHook: null | Hook = null;
@@ -23,6 +25,18 @@ interface Hook {
 	next: Hook | null;
 }
 
+export interface Effect {
+	tag: Flags;
+	create: EffectCallback | null;
+	destory: EffectCallback | null;
+	deps: EffectDeps;
+	next: Effect | null;
+}
+export interface FCUpdateQueue<State> extends UpdateQueue<State> {
+	lastEffect: Effect | null;
+}
+type EffectCallback = () => void;
+type EffectDeps = any[] | null;
 export function renderWithHooks(wip: FiberNode, lane: Lane) {
 	// 赋值操作
 	currentlyRenderingFiber = wip;
@@ -47,8 +61,64 @@ export function renderWithHooks(wip: FiberNode, lane: Lane) {
 
 const HooksDispatcherOnMount: Dispatcher = {
 	// @ts-ignore
-	useState: mountState
+	useState: mountState,
+	useEffect: mountEffect
 };
+function mountEffect(create: EffectCallback | void, deps: EffectDeps | void) {
+	const hook = mountWorkInProgressHook(); // 取出第一个hook
+	const nextDeps = deps === undefined ? null : deps;
+	(currentlyRenderingFiber as FiberNode).flags |= PassiveEffect; // 代表mount时候需要处理副作用
+	// mount时候
+	hook.memorizedState = pushEffect(
+		Passive | HookHasEffect,
+		create,
+		undefined,
+		nextDeps
+	);
+}
+function pushEffect(
+	hookFlags: Flags,
+	create: EffectCallback | void,
+	destory: EffectCallback | void,
+	deps: EffectDeps
+): Effect {
+	const effect: Effect = {
+		tag: hookFlags,
+		create,
+		destory,
+		deps,
+		next: null
+	};
+	const fiber = currentlyRenderingFiber as FiberNode;
+	const updateQueue = fiber.updateQueue as FCUpdateQueue<any>;
+	if (updateQueue === null) {
+		const updateQueue = createFCUpdateQueue();
+		fiber.updateQueue = updateQueue;
+		effect.next = effect; // 指向自己
+		updateQueue.lastEffect = effect; // 形成环形列表
+	} else {
+		// 插入effect
+		const lastEffect = updateQueue.lastEffect;
+		if (lastEffect === null) {
+			effect.next = effect; // 指向自己
+			updateQueue.lastEffect = effect;
+		} else {
+			/**
+			 * 环形列表插入操作
+			 */
+			const firstEffect = lastEffect.next;
+			lastEffect.next = effect;
+			effect.next = firstEffect;
+			updateQueue.lastEffect = effect;
+		}
+	}
+	return effect;
+}
+function createFCUpdateQueue<State>() {
+	const updateQueue = createUpdateQueue<State>() as FCUpdateQueue<State>;
+	updateQueue.lastEffect = null;
+	return updateQueue;
+}
 function mountState<State>(
 	initialState: () => State | State
 ): [State, Dispatch<State>] {
