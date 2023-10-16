@@ -9,14 +9,17 @@ import {
 	NoLane,
 	SyncLane,
 	getHighestPriorityLane,
+	markRootFinished,
 	mergeLanes
 } from './fiberLanes';
 import { flushSyncCallbacks, scheduleSyncCallback } from './syncTaskQueue';
 import { HostRoot } from './workTags';
 
 let workInProgress: FiberNode | null = null;
-function prepareFreshStack(root: FiberRootNode) {
+let wipRootRenderLane: Lane = NoLane; // 本次更新的lane
+function prepareFreshStack(root: FiberRootNode, lane: Lane) {
 	workInProgress = createWorkInProgress(root.current, {});
+	wipRootRenderLane = lane;
 }
 function markRootUpdated(root: FiberRootNode, lane: Lane) {
 	root.pendingLanes = mergeLanes(root.pendingLanes, lane);
@@ -73,9 +76,11 @@ function performSyncWorkOnRoot(root: FiberRootNode, lane: Lane) {
 		ensureRootIsScheduled(root);
 		return;
 	}
-
+	if (__DEV__) {
+		console.warn('render阶段开始');
+	}
 	// 初始化
-	prepareFreshStack(root);
+	prepareFreshStack(root, lane);
 	do {
 		try {
 			workLoop();
@@ -89,6 +94,8 @@ function performSyncWorkOnRoot(root: FiberRootNode, lane: Lane) {
 	} while (true);
 	const finishedWork = root.current.alternate;
 	root.finishedWork = finishedWork;
+	root.finishedLane = lane;
+	wipRootRenderLane = NoLane;
 	// 根据wip fiberNode树 和 树种的flags执行具体的操作
 	commitRoot(root);
 }
@@ -105,8 +112,14 @@ function commitRoot(root: FiberRootNode) {
 	if (__DEV__) {
 		console.warn('commit阶段开始', finishedWork);
 	}
+	const lane = root.finishedLane;
+	if (lane === NoLane && __DEV__) {
+		console.error('commit阶段finishedLane不应该为Nolane');
+	}
 	// 重置操作
 	root.finishedWork = null;
+	root.finishedLane = NoLane;
+	markRootFinished(root, lane);
 	// 判断是否存在三个子阶段需要执行的操作
 	// 判断root本身的flags和root subtreeFlags
 	const subtreeHasEffect =
@@ -129,7 +142,7 @@ function workLoop() {
 }
 function performUnitOfWork(fiber: FiberNode) {
 	// next可能是子fiber，也可能是null
-	const next = beginWork(fiber); // 向下递阶段
+	const next = beginWork(fiber, wipRootRenderLane); // 向下递阶段
 	fiber.memoizedProps = fiber.pendingProps;
 	if (next === null) {
 		completeUnitOfWork(fiber);

@@ -39,12 +39,26 @@ function App() {
 			</ul>
 		);
 	}
+	function UpdateTest() {
+		return (
+			<ul
+				onClickCapture={() => {
+					setNum((num) => num + 1);
+					setNum((num) => num + 1);
+					setNum((num) => num + 1);
+				}}
+			>
+				{num}
+			</ul>
+		);
+	}
 	return (
 		<div>
 			<DiffTest></DiffTest>
 			<FragmentTest></FragmentTest>
 			<FragmentTest2></FragmentTest2>
 			<FragmentTest3></FragmentTest3>
+			<UpdateTest></UpdateTest>
 			<h4 onClick={() => setNum(num + 1)}>{num}</h4>
 			<h4 onClickCapture={() => setNum(num + 1)}>{num}</h4>
 			<Child />

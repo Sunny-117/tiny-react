@@ -9,10 +9,12 @@ import {
 import { Action } from 'shared/ReactTypes';
 import { scheduleUpdateOnFiber } from './workLoop';
 import { Dispatch, Dispatcher } from 'react/src/currentDispathcer';
-import { requestUpdateLane } from './fiberLanes';
+import { Lane, NoLane, requestUpdateLane } from './fiberLanes';
 
 let currentlyRenderingFiber: FiberNode | null = null;
 let workInProgressHook: null | Hook = null;
+
+let renderLane: Lane = NoLane;
 
 const { currentDispatcher } = internals;
 interface Hook {
@@ -21,11 +23,12 @@ interface Hook {
 	next: Hook | null;
 }
 
-export function renderWithHooks(wip: FiberNode) {
+export function renderWithHooks(wip: FiberNode, lane: Lane) {
 	// 赋值操作
 	currentlyRenderingFiber = wip;
 	// 重置操作
 	wip.memoizedState = null;
+	renderLane = lane;
 	const current = wip.alternate;
 	if (current !== null) {
 		// update
@@ -38,6 +41,7 @@ export function renderWithHooks(wip: FiberNode) {
 	const children = Component(props);
 	// 重置操作
 	currentlyRenderingFiber = null;
+	renderLane = NoLane;
 	return children;
 }
 
