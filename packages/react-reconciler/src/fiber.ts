@@ -8,6 +8,7 @@ import {
 import { Flags, NoFlags } from './fiberFlags';
 import { Container } from 'hostConfig';
 import { Lanes, NoLane, NoLanes } from './fiberLanes';
+import { Effect } from './fiberHooks';
 
 export class FiberNode {
 	type: any;
@@ -56,6 +57,10 @@ export class FiberNode {
 		this.deletions = null; // 父fiber下面的需要删除的子fiber
 	}
 }
+export interface PendingPassiveEffects {
+	unmount: Effect[];
+	update: Effect[];
+}
 
 export class FiberRootNode {
 	container: Container;
@@ -63,6 +68,7 @@ export class FiberRootNode {
 	finishedWork: FiberNode | null;
 	pendingLanes: Lanes;
 	finishedLane: Lanes;
+	pendingPassiveEffects: PendingPassiveEffects;
 	constructor(container: Container, hostRootFiber: FiberNode) {
 		this.container = container;
 		this.current = hostRootFiber;
@@ -70,6 +76,11 @@ export class FiberRootNode {
 		this.finishedWork = null;
 		this.pendingLanes = NoLanes;
 		this.finishedLane = NoLane;
+
+		this.pendingPassiveEffects = {
+			unmount: [],
+			update: []
+		};
 	}
 }
 
