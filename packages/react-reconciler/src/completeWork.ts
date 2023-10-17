@@ -1,5 +1,6 @@
 import {
 	Container,
+	Instance,
 	appendInitialChild,
 	createInstance,
 	createTextInstance,
@@ -14,7 +15,7 @@ import {
 	HostText
 } from './workTags';
 import { NoFlags, Update } from './fiberFlags';
-import { updateFiberProps } from 'react-dom/src/SyntheticEvent';
+// import { updateFiberProps } from 'react-dom/src/SyntheticEvent';
 
 function markUpdate(fiber: FiberNode) {
 	fiber.flags |= Update;
@@ -28,11 +29,12 @@ export const completeWork = (wip: FiberNode) => {
 		case HostComponent:
 			if (current !== null && wip.stateNode) {
 				// 对于HostComponent，wip.stateNode保存的是dom节点
-				// update
+				// TODO update
 				// e.g: className a->b 标记Update
 				// 1. props是否变化了 {onClick: xxx} -> {onClick: yyy}
 				// 2. 变化了 Update flag
-				updateFiberProps(wip.stateNode, newProps);
+				markUpdate(wip);
+				// updateFiberProps(wip.stateNode, newProps);
 				// FiberNode.updateQueue = [className, 'aaa', title, 'hahaha']; [n, n+1]
 				// updateQueue中保存什么东西变了，以及变成了什么
 			} else {
@@ -90,7 +92,7 @@ export const completeWork = (wip: FiberNode) => {
  *  <A />
  * </h3>
  */
-function appendAllChildren(parent: Container, wip: FiberNode) {
+function appendAllChildren(parent: Container | Instance, wip: FiberNode) {
 	let node = wip.child;
 	while (node !== null) {
 		if (node?.tag === HostComponent || node?.tag === HostText) {
