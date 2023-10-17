@@ -85,6 +85,14 @@ importers:
       react-reconciler: link:../react-reconciler
       shared: link:../shared
 
+  packages/react-noop-renderer:
+    specifiers:
+      react-reconciler: workspace:*
+      shared: workspace:*
+    dependencies:
+      react-reconciler: link:../react-reconciler
+      shared: link:../shared
+
   packages/react-reconciler:
     specifiers:
       shared: workspace:^1.0.0
