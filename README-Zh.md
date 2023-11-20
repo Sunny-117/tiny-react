@@ -2,7 +2,7 @@
 
 [English](./README.md)
 
-基于 [ts-lib-vite](https://github.com/Sunny-117/ts-lib-vite)
+> 基于 [ts-lib-vite](https://github.com/Sunny-117/ts-lib-vite)
 
 # 项目介绍
 

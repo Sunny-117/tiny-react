@@ -2,7 +2,7 @@
 
 [简体中文](./README-Zh.md)
 
-based on [ts-lib-vite](https://github.com/Sunny-117/ts-lib-vite)
+> based on [ts-lib-vite](https://github.com/Sunny-117/ts-lib-vite)
 
 # Project introduction
 
