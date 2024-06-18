@@ -4,6 +4,1133 @@
 >
 > 感谢掘友的鼓励与支持🌹🌹🌹，往期文章都在最后梳理出来了(●'◡'●)
 
+
+# Scheduler 源码剖析与实现
+
+
+## MessageChannel
+
+### 回顾事件循环
+
+之前在学习事件循环的时候，大家看得更多的是下面这张图：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-29-021951.gif" alt="eventloop2" style="zoom:67%;" />
+
+首先会执行同步代码，同步代码执行的时候，如果遇到异步代码，就会放到 Webapis 里面进行执行，当 webapis 执行完毕之后，会将结果放入到 task queue（任务队列），同步代码执行完毕后，就会从任务队列中会获取一个一个的任务进行执行。
+
+如果将事件循环和浏览器渲染结合到一起，大致就是下面这张图：
+
+![eventloop](https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-29-022329.gif)
+
+从上面的胴体，我们可以看出，每一次事件循环，会从任务队列里面获取一个任务来执行。
+
+之前有讲过，大多数设备的刷新率是 60hz，也就是1秒钟要绘制60次，这意味着浏览器每隔 16.66ms 就需要重新渲染一次。
+
+总结一下：事件循环的机制就是每一次循环，会从任务队列中取一个任务来执行，如果还没有达到浏览器需要重新渲染的时间（16.66ms），那么就继续循环一次，从任务队列里面再取一个任务来执行，依此类推，直到浏览器需要重新渲染，这个时候就会执行重选渲染的任务，执行完毕后，回到之前的流程。
+
+
+
+*requestAnimationFrame Api* 是在每一次重新渲染之前执行，这个 *API* 的出现，就是专门拿来做动画的。以前我们做动画，用的更多的是 setInterval 或者 setTimeout，但是这些 API 本意不是拿来做动画的。使用 *requestAnimationFrame Api* 拿到做动画，最大的优点就是频率是和浏览器重新渲染的频率一致。
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-29-023954.png" alt="image-20221229103954104" style="zoom:50%;" />
+
+requestAnimationFrame 就不会存在这个问题，因为它是在渲染之前，保证了和浏览器渲染是同频
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-29-024236.png" alt="image-20221229104236045" style="zoom:50%;" />
+
+微任务：如果微任务队列里面存在任务，那么事件循环会在循环一次的时候，将整个微任务队列清空。
+
+每一次事件循环时这几种任务的区别，如下图：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-29-024700.gif" alt="tasks" style="zoom:67%;" />
+
+
+
+### MessageChannel 以及为什么选择它
+
+MessageChannel 接口本身是用来做消息通信的，允许我们创建一个消息通道，通过它的两个 MessagePort 来进行信息的发送和接收。
+
+基本使用如下：
+
+```html
+<div>
+  <input type="text" id="content" placeholder="请输入消息">
+</div>
+<div>
+  <button id="btn1">给 port1 发消息</button>
+  <button id="btn2">给 port2 发消息</button>
+</div>
+```
+
+```js
+const channel = new MessageChannel();
+// 两个信息端口，这两个信息端口可以进行信息的通信
+const port1 = channel.port1;
+const port2 = channel.port2;
+btn1.onclick = function(){
+  // 给 port1 发消息
+  // 那么这个信息就应该由 port2 来进行发送
+  port2.postMessage(content.value);
+}
+// port1 需要监听发送给自己的消息
+port1.onmessage = function(event){
+  console.log(`port1 收到了来自 port2 的消息：${event.data}`);
+}
+
+btn2.onclick = function(){
+  // 给 port2 发消息
+  // 那么这个信息就应该由 port1 来进行发送
+  port1.postMessage(content.value);
+}
+// port2 需要监听发送给自己的消息
+port2.onmessage = function(event){
+  console.log(`port2 收到了来自 port1 的消息：${event.data}`);
+}
+```
+
+那么这个和 scheduler 有什么关系呢？
+
+之前，我们有说过 scheduler 是用来调度任务，调度任务需要满足两个条件：
+
+- JS 暂停，将主线程还给浏览器，让浏览器能够有序的重新渲染页面
+- 暂停了的 JS（说明还没有执行完），需要再下一次接着来执行
+
+那么这里自然而然就会想到事件循环，我们可以将没有执行完的 JS 放入到任务队列，下一次事件循环的时候再取出来执行。
+
+那么，如何将没有执行完的任务放入到任务队列中呢？
+
+那么这里就需要产生一个任务（宏任务），这里就可以使用 MessageChannel，因为 MessageChannel 能够产生宏任务。
+
+
+
+**为什么不选择 setTimeout**
+
+以前要创建一个宏任务，可以采用 setTimeout(fn, 0) 这种方式，但是 *react* 团队没有采用这种方式。
+
+这是因为 setTimeout 在嵌套层级超过 5 层，timeout（延时）如果小于 4ms，那么则会设置为 4ms。
+
+这个你可以参阅 *HTML* 规范：*https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#dom-settimeout*
+
+>If nesting level is greater than 5, and timeout is less than 4, then set timeout to 4.
+
+可以写一个例子来进行验证：
+
+```js
+let count = 0; // 计数器
+let startTime = new Date(); // 获取当前的时间戳
+console.log("start time:", 0, 0);
+function fn(){
+  setTimeout(function(){
+    console.log("exec time:", ++count, new Date() - startTime);
+    if(count === 50){
+      return;
+    }
+    fn();
+  },0)
+}
+fn();
+```
+
+执行结果部分截图如下：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-29-031030.png" alt="image-20221229111030112" style="zoom:50%;" />
+
+正因为这个原因，所以 react 团队没有选择使用 setTimeout 来产生任务，因为 4ms 的时间的浪费还是不可忽视的。
+
+
+
+**为什么没有选择 requestAnimationFrame**
+
+这个也不合适，因为这个只能在重新渲染之前，才能够执行一次，而如果我们包装成一个任务，放入到任务队列中，那么只要没到重新渲染的时间，就可以一直从任务队列里面获取任务来执行。
+
+而且 requestAnimationFrame 还会有一定的兼容性问题，safari 和 edge 浏览器是将 requestAnimationFrame 放到渲染之后执行的，chrome 和 firefox 是将 requestAnimationFrame 放到渲染之前执行的，所以这里存在不同的浏览器有不同的执行顺序的问题。
+
+> 根据标准，应该是放在渲染之前。
+
+
+
+**为什么没有选择包装成一个微任务？**
+
+这是因为和微任务的执行机制有关系，微任务队列会在清空整个队列之后才会结束。那么微任务会在页面更新前一直执行，直到队列被清空，达不到将主线程还给浏览器的目的。
+
+
+
+## Scheduler 调度普通任务
+
+Scheduler 的核心源码位于 packages/scheduler/src/forks/Scheduler.js
+
+### **scheduleCallback**
+
+该函数的主要目的就是用调度任务，该方法的分析如下：
+
+```js
+let getCurrentTime = () => performance.now();
+
+// 有两个队列分别存储普通任务和延时任务
+// 里面采用了一种叫做小顶堆的算法，保证每次从队列里面取出来的都是优先级最高（时间即将过期）
+var taskQueue = []; // 存放普通任务
+var timerQueue = []; // 存放延时任务
+
+var maxSigned31BitInt = 1073741823;
+
+// Timeout 对应的值
+var IMMEDIATE_PRIORITY_TIMEOUT = -1;
+var USER_BLOCKING_PRIORITY_TIMEOUT = 250;
+var NORMAL_PRIORITY_TIMEOUT = 5000;
+var LOW_PRIORITY_TIMEOUT = 10000;
+var IDLE_PRIORITY_TIMEOUT = maxSigned31BitInt;
+
+/**
+ *
+ * @param {*} priorityLevel 优先级等级
+ * @param {*} callback 具体要做的任务
+ * @param {*} options { delay: number } 这是一个对象，该对象有 delay 属性，表示要延迟的时间
+ * @returns
+ */
+function unstable_scheduleCallback(priorityLevel, callback, options) {
+  // 获取当前的时间
+  var currentTime = getCurrentTime();
+
+  var startTime;
+  // 整个这个 if.. else 就是在设置起始时间，如果有延时，起始时间需要添加上这个延时
+  if (typeof options === "object" && options !== null) {
+    var delay = options.delay;
+    // 如果设置了延时时间，那么 startTime 就为当前时间 + 延时时间
+    if (typeof delay === "number" && delay > 0) {
+      startTime = currentTime + delay;
+    } else {
+      startTime = currentTime;
+    }
+  } else {
+    startTime = currentTime;
+  }
+
+  var timeout;
+  // 根据传入的优先级等级来设置不同的 timeout
+  switch (priorityLevel) {
+    case ImmediatePriority:
+      timeout = IMMEDIATE_PRIORITY_TIMEOUT;
+      break;
+    case UserBlockingPriority:
+      timeout = USER_BLOCKING_PRIORITY_TIMEOUT;
+      break;
+    case IdlePriority:
+      timeout = IDLE_PRIORITY_TIMEOUT;
+      break;
+    case LowPriority:
+      timeout = LOW_PRIORITY_TIMEOUT;
+      break;
+    case NormalPriority:
+    default:
+      timeout = NORMAL_PRIORITY_TIMEOUT;
+      break;
+  }
+  // 接下来就计算出过期时间
+  // 计算出来的时间有些比当前时间要早，绝大部分比当前的时间要晚一些
+  var expirationTime = startTime + timeout;
+
+  // 创建一个新的任务
+  var newTask = {
+    id: taskIdCounter++, // 任务 id
+    callback, // 该任务具体要做的事情
+    priorityLevel, // 任务的优先级别
+    startTime, // 任务开始时间
+    expirationTime, // 任务的过期时间
+    sortIndex: -1, // 用于后面在小顶堆（这是一种算法，可以始终从任务队列中拿出最优先的任务）进行排序的索引
+  };
+  if (enableProfiling) {
+    newTask.isQueued = false;
+  }
+
+  if (startTime > currentTime) {
+    // This is a delayed task.
+    // 说明这是一个延时任务
+    newTask.sortIndex = startTime;
+    // 将该任务推入到 timerQueue 的任务队列中
+    push(timerQueue, newTask);
+    if (peek(taskQueue) === null && newTask === peek(timerQueue)) {
+      // 进入此 if，说明 taskQueue 里面的任务已经执行完毕了
+      // 并且从 timerQueue 里面取出一个最新的任务又是当前任务
+      // All tasks are delayed, and this is the task with the earliest delay.
+
+      // 下面的 if.. else 就是一个开关
+      if (isHostTimeoutScheduled) {
+        // Cancel an existing timeout.
+        cancelHostTimeout();
+      } else {
+        isHostTimeoutScheduled = true;
+      }
+      // Schedule a timeout.
+      // 如果是延时任务，调用 requestHostTimeout 进行任务的调度
+      requestHostTimeout(handleTimeout, startTime - currentTime);
+    }
+  } else {
+    // 说明不是延时任务
+    newTask.sortIndex = expirationTime; // 设置了 sortIndex 后，可以在任务队列里面进行一个排序
+    // 推入到 taskQueue 任务队列
+    push(taskQueue, newTask);
+    if (enableProfiling) {
+      markTaskStart(newTask, currentTime);
+      newTask.isQueued = true;
+    }
+    // Schedule a host callback, if needed. If we're already performing work,
+    // wait until the next time we yield.
+    // 最终调用 requestHostCallback 进行任务的调度
+    if (!isHostCallbackScheduled && !isPerformingWork) {
+      isHostCallbackScheduled = true;
+      requestHostCallback(flushWork);
+    }
+  }
+
+  // 向外部返回任务
+  return newTask;
+}
+```
+
+该方法主要注意以下几个关键点：
+
+- 关于任务队列有两个，一个 taskQueue，另一个是 timerQueue，taskQueue 存放普通任务，timerQueue 存放延时任务，任务队列内部用到了小顶堆的算法，保证始终放进去（push）的任务能够进行正常的排序，回头通过 peek 取出任务时，始终取出的是时间优先级最高的那个任务
+- 根据传入的不同的 priorityLevel，会进行不同的 timeout 的设置，任务的 timeout 时间也就不一样了，有的比当前时间还要小，这个代表立即需要执行的，绝大部分的时间比当前时间大。
+
+![image-20221229145930771](https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-29-065931.png)
+
+- 不同的任务，最终调用的函数不一样
+  - 普通任务：requestHostCallback(flushWork)
+  - 延时任务：requestHostTimeout(handleTimeout, startTime - currentTime);
+
+
+
+### requestHostCallback 和 schedulePerformWorkUntilDeadline
+
+```js
+/**
+ * 
+ * @param {*} callback 是在调用的时候传入的 flushWork
+ * requestHostCallback 这个函数没有做什么事情，主要就是调用 schedulePerformWorkUntilDeadline
+ */
+function requestHostCallback(callback) {
+  scheduledHostCallback = callback;
+  // scheduledHostCallback ---> flushWork
+  if (!isMessageLoopRunning) {
+    isMessageLoopRunning = true;
+    schedulePerformWorkUntilDeadline(); // 实例化 MessageChannel 进行后面的调度
+  }
+}
+
+let schedulePerformWorkUntilDeadline; // undefined
+if (typeof localSetImmediate === 'function') {
+  // Node.js and old IE.
+  // https://github.com/facebook/react/issues/20756
+  schedulePerformWorkUntilDeadline = () => {
+    localSetImmediate(performWorkUntilDeadline);
+  };
+} else if (typeof MessageChannel !== 'undefined') {
+  // 大多数情况下，使用的是 MessageChannel
+  const channel = new MessageChannel();
+  const port = channel.port2;
+  channel.port1.onmessage = performWorkUntilDeadline;
+  schedulePerformWorkUntilDeadline = () => {
+    port.postMessage(null);
+  };
+} else {
+  // setTimeout 进行兜底
+  schedulePerformWorkUntilDeadline = () => {
+    localSetTimeout(performWorkUntilDeadline, 0);
+  };
+}
+```
+
+- requestHostCallback 主要就是调用了 schedulePerformWorkUntilDeadline
+- schedulePerformWorkUntilDeadline 一开始是 undefiend，根据不同的环境选择不同的生成宏任务的方式
+
+
+
+### performWorkUntilDeadline
+
+```js
+let startTime = -1;
+const performWorkUntilDeadline = () => {
+  // scheduledHostCallback ---> flushWork
+  if (scheduledHostCallback !== null) {
+    // 获取当前的时间
+    const currentTime = getCurrentTime();
+    // Keep track of the start time so we can measure how long the main thread
+    // has been blocked.
+    // 这里的 startTime 并非 unstable_scheduleCallback 方法里面的 startTime
+    // 而是一个全局变量，默认值为 -1
+    // 用来测量任务的执行时间，从而能够知道主线程被阻塞了多久
+    startTime = currentTime;
+    const hasTimeRemaining = true; // 默认还有剩余时间
+
+    // If a scheduler task throws, exit the current browser task so the
+    // error can be observed.
+    //
+    // Intentionally not using a try-catch, since that makes some debugging
+    // techniques harder. Instead, if `scheduledHostCallback` errors, then
+    // `hasMoreWork` will remain true, and we'll continue the work loop.
+    let hasMoreWork = true; // 默认还有需要做的任务
+    try {
+      // scheduledHostCallback ---> flushWork(true, 开始时间): boolean
+      // 如果是 true，代表工作没做完
+      // false 代表没有任务了
+      hasMoreWork = scheduledHostCallback(hasTimeRemaining, currentTime);
+    } finally {
+      if (hasMoreWork) {
+        // If there's more work, schedule the next message event at the end
+        // of the preceding one.
+        // 那么就使用 messageChannel 进行一个 message 事件的调度，就将任务放入到任务队列里面
+        schedulePerformWorkUntilDeadline();
+      } else {
+        // 说明任务做完了
+        isMessageLoopRunning = false;
+        scheduledHostCallback = null; // scheduledHostCallback 之前为 flushWork，设置为 null
+      }
+    }
+  } else {
+    isMessageLoopRunning = false;
+  }
+  // Yielding to the browser will give it a chance to paint, so we can
+  // reset this.
+  needsPaint = false;
+};
+
+```
+
+- 该方法实际上主要就是在调用 scheduledHostCallback（flushWork），调用之后，返回一个布尔值，根据这个布尔值来判断是否还有剩余的任务，如果还有，就是用 messageChannel 进行一个宏任务的包装，放入到任务队列里面
+
+
+
+### flushWork 和 workLoop
+
+```js
+/**
+ *
+ * @param {*} hasTimeRemaining 是否有剩余的时间，一开始是 true
+ * @param {*} initialTime 做这一个任务时开始执行的时间
+ * @returns
+ */
+function flushWork(hasTimeRemaining, initialTime) {
+  // ...
+  try {
+    if (enableProfiling) {
+      try {
+        // 核心实际上是这一句，调用 workLoop
+        return workLoop(hasTimeRemaining, initialTime);
+      } catch (error) {
+        // ...
+      }
+    } else {
+      // 核心实际上是这一句，调用 workLoop
+      return workLoop(hasTimeRemaining, initialTime);
+    }
+  } finally {
+    // ...
+  }
+}
+
+/**
+ *
+ * @param {*} hasTimeRemaining 是否有剩余的时间，一开始是 true
+ * @param {*} initialTime 做这一个任务时开始执行的时间
+ * @returns
+ */
+function workLoop(hasTimeRemaining, initialTime) {
+  let currentTime = initialTime;
+  // 该方法实际上是用来遍历 timerQueue，判断是否有已经到期了的任务
+  // 如果有，将这个任务放入到 taskQueue
+  advanceTimers(currentTime);
+  // 从 taskQueue 里面取一个任务出来
+  currentTask = peek(taskQueue);
+  while (
+    currentTask !== null &&
+    !(enableSchedulerDebugging && isSchedulerPaused)
+  ) {
+    if (
+      currentTask.expirationTime > currentTime &&
+      (!hasTimeRemaining || shouldYieldToHost())
+    ) {
+      // This currentTask hasn't expired, and we've reached the deadline.
+      // currentTask.expirationTime > currentTime 表示任务还没有过期
+      // hasTimeRemaining 代表是否有剩余时间
+      // shouldYieldToHost 任务是否应该暂停，归还主线程
+      // 那么我们就跳出 while
+      break;
+    }
+    // 没有进入到上面的 if，说明这个任务到过期时间，并且有剩余时间来执行，没有到达需要浏览器渲染的时候
+    // 那我们就执行该任务即可
+    const callback = currentTask.callback; // 拿到这个任务
+    if (typeof callback === "function") {
+        // 说明当前的任务是一个函数，我们执行该任务
+
+      currentTask.callback = null;
+      currentPriorityLevel = currentTask.priorityLevel;
+      const didUserCallbackTimeout = currentTask.expirationTime <= currentTime;
+      if (enableProfiling) {
+        markTaskRun(currentTask, currentTime);
+      }
+      // 任务的执行实际上就是在这一句
+      const continuationCallback = callback(didUserCallbackTimeout);
+      currentTime = getCurrentTime();
+      if (typeof continuationCallback === "function") {
+        // If a continuation is returned, immediately yield to the main thread
+        // regardless of how much time is left in the current time slice.
+        // $FlowFixMe[incompatible-use] found when upgrading Flow
+        currentTask.callback = continuationCallback;
+        if (enableProfiling) {
+          // $FlowFixMe[incompatible-call] found when upgrading Flow
+          markTaskYield(currentTask, currentTime);
+        }
+        advanceTimers(currentTime);
+        return true;
+      } else {
+        if (enableProfiling) {
+          // $FlowFixMe[incompatible-call] found when upgrading Flow
+          markTaskCompleted(currentTask, currentTime);
+          // $FlowFixMe[incompatible-use] found when upgrading Flow
+          currentTask.isQueued = false;
+        }
+        if (currentTask === peek(taskQueue)) {
+          pop(taskQueue);
+        }
+        advanceTimers(currentTime);
+      }
+    } else {
+      // 直接弹出
+      pop(taskQueue);
+    }
+    // 再从 taskQueue 里面拿一个任务出来
+    currentTask = peek(taskQueue);
+  }
+  // Return whether there's additional work
+  if (currentTask !== null) {
+    // 如果不为空，代表还有更多的任务，那么回头外部的 hasMoreWork 拿到的就也是 true
+    return true;
+  } else {
+    // taskQueue 这个队列是空了，那么我们就从 timerQueue 里面去看延时任务
+    const firstTimer = peek(timerQueue);
+    if (firstTimer !== null) {
+      requestHostTimeout(handleTimeout, firstTimer.startTime - currentTime);
+    }
+    // 没有进入上面的 if，说明 timerQueue 里面的任务也完了，返回 false，回头外部的 hasMoreWork 拿到的就也是 false
+    return false;
+  }
+}
+```
+
+- flushWork 主要就是在调用 workLoop
+- workLoop 首先有一个 while 循环，该 while 循环保证了能够从任务队列中不停的取任务出来
+
+```js
+ while (
+    currentTask !== null &&
+    !(enableSchedulerDebugging && isSchedulerPaused)
+ ){
+   // ...
+ }
+```
+
+- 当然，不是说一直从任务队列里面取任务出来执行就完事儿，每次取出一个任务后，我们还需要一系列的判断
+
+```js
+if (
+      currentTask.expirationTime > currentTime &&
+      (!hasTimeRemaining || shouldYieldToHost())
+ ) {
+  break;
+}
+```
+
+- currentTask.expirationTime > currentTime 表示任务还没有过期
+- hasTimeRemaining 代表是否有剩余时间
+- shouldYieldToHost 任务是否应该暂停，归还主线程
+- 如果进入 if，说明因为某些原因不能再执行任务，需要立即归还主线程，那么我们就跳出 while
+
+
+
+### shouldYieldToHost
+
+```js
+function shouldYieldToHost() {
+    // getCurrentTime 获取当前时间
+    // startTime 是我们任务开始时的时间，一开始是 -1，之后任务开始时，将任务开始时的时间复值给了它
+  const timeElapsed = getCurrentTime() - startTime;
+  // frameInterval 默认设置的是 5ms
+  if (timeElapsed < frameInterval) {
+    // 主线程只被阻塞了一点点时间，远远没达到需要归还的时候
+    return false;
+  }
+  // 如果没有进入上面的 if，说明主线程已经被阻塞了一段时间了
+  // 需要归还主线程
+  if (enableIsInputPending) {
+    if (needsPaint) {
+      // There's a pending paint (signaled by `requestPaint`). Yield now.
+      return true;
+    }
+    if (timeElapsed < continuousInputInterval) {
+      // We haven't blocked the thread for that long. Only yield if there's a
+      // pending discrete input (e.g. click). It's OK if there's pending
+      // continuous input (e.g. mouseover).
+      if (isInputPending !== null) {
+        return isInputPending();
+      }
+    } else if (timeElapsed < maxInterval) {
+      // Yield if there's either a pending discrete or continuous input.
+      if (isInputPending !== null) {
+        return isInputPending(continuousOptions);
+      }
+    } else {
+      // We've blocked the thread for a long time. Even if there's no pending
+      // input, there may be some other scheduled work that we don't know about,
+      // like a network event. Yield now.
+      return true;
+    }
+  }
+
+  // `isInputPending` isn't available. Yield now.
+  return true;
+}
+```
+
+- 首先计算 timeElapsed，然后判断是否超时，没有的话就返回 false，表示不需要归还，否则就返回 true，表示需要归还。
+- frameInterval 默认设置的是 5ms
+
+
+
+### advanceTimers
+
+```js
+function advanceTimers(currentTime) {
+  // Check for tasks that are no longer delayed and add them to the queue.
+  // 从 timerQueue 里面获取一个任务
+  let timer = peek(timerQueue);
+  // 遍历整个 timerQueue
+  while (timer !== null) {
+    if (timer.callback === null) {
+      // 这个任务没有对应的要执行的 callback，直接从这个队列弹出
+      pop(timerQueue);
+    } else if (timer.startTime <= currentTime) {
+      // 进入这个分支，说明当前的任务已经不再是延时任务
+      // 我们需要将其转移到 taskQueue
+      pop(timerQueue);
+      timer.sortIndex = timer.expirationTime;
+      push(taskQueue, timer); // 推入到 taskQueue
+      // ...
+    } else {
+      return;
+    }
+    // 从 timerQueue 里面再取一个新的进行判断
+    timer = peek(timerQueue);
+  }
+}
+```
+
+- 该方法就是遍历整个 timerQueue，查看是否有已经过期的方法，如果有，不是说直接执行，而是将这个过期的方法添加到 taskQueue 里面。
+
+
+
+## Scheduler调度延时任务
+
+
+
+### *unstable_scheduleCallback*
+
+```js
+function unstable_scheduleCallback(priorityLevel,callback,options){
+  //...
+  if (startTime > currentTime) {
+    // 调度一个延时任务
+    requestHostTimeout(handleTimeout, startTime - currentTime);
+  } else {
+    // 调度一个普通任务
+    requestHostCallback(flushWork);
+  }
+}
+```
+
+- 可以看到，调度一个延时任务的时候，主要是执行 requestHostTimeout
+
+
+
+### requestHostTimeout
+
+```js
+// 实际上在浏览器环境就是 setTimeout
+const localSetTimeout = typeof setTimeout === 'function' ? setTimeout : null;
+
+/**
+ * 
+ * @param {*} callback 就是传入的 handleTimeout
+ * @param {*} ms 延时的时间
+ */
+function requestHostTimeout(callback, ms) {
+  taskTimeoutID = localSetTimeout(() => {
+    callback(getCurrentTime());
+  }, ms);
+  /**
+   * 因此，上面的代码，就可以看作是
+   * id = setTimeout(function(){
+   *    handleTimeout(getCurrentTime())
+   * }, ms)
+   */
+}
+
+```
+
+可以看到，requestHostTimeout 实际上就是调用 setTimoutout，然后在 setTimeout 中，调用传入的 handleTimeout
+
+
+
+### handleTimeout
+
+```js
+/**
+ *
+ * @param {*} currentTime 当前时间
+ */
+function handleTimeout(currentTime) {
+  isHostTimeoutScheduled = false; // 开关
+  // 遍历timerQueue，将时间已经到了的延时任务放入到 taskQueue
+  advanceTimers(currentTime);
+
+  if (!isHostCallbackScheduled) {
+    if (peek(taskQueue) !== null) {
+      // 从普通任务队列中拿一个任务出来
+      isHostCallbackScheduled = true;
+      // 采用调度普通任务的方式进行调度
+      requestHostCallback(flushWork);
+    } else {
+      // taskQueue任务队列里面是空的
+      // 再从 timerQueue 队列取一个任务出来
+      // peek 是小顶堆中提供的方法
+      const firstTimer = peek(timerQueue);
+      if (firstTimer !== null) {
+        // 取出来了，接下来取出的延时任务仍然使用 requestHostTimeout 进行调度
+        requestHostTimeout(handleTimeout, firstTimer.startTime - currentTime);
+      }
+    }
+  }
+}
+```
+
+- handleTimeout 里面主要就是调用 advanceTimers 方法，该方法的作用是将时间已经到了的延时任务放入到 taskQueue，那么现在 taskQueue 里面就有要执行的任务，然后使用 requestHostCallback 进行调度。如果 taskQueue 里面没有任务了，再次从 timerQueue 里面去获取延时任务，然后通过 requestHostTimeout 进行调度。
+
+
+
+### 流程图
+
+Scheduler 这一块儿大致的流程图如下：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-023505.png" alt="image-20221230103504711" style="zoom: 50%;" />
+
+
+
+## 最小堆
+
+在 Scheduler 中，使用最小堆的数据结构在对任务进行排序。
+
+```js
+// 两个任务队列
+var taskQueue: Array<Task> = []; 
+var timerQueue: Array<Task> = [];
+
+push(timerQueue, newTask); // 像数组中推入一个任务
+pop(timerQueue); // 从数组中弹出一个任务
+timer = peek(timerQueue); // 从数组中获取第一个任务
+```
+
+### 二叉堆基本知识
+
+#### 二叉树
+
+所谓二叉树，指的是一个父节点只能有1个或者2个子节点，例如下图：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-055103.png" alt="image-20221230135103093" style="zoom:50%;" />
+
+总之就是不能多余两个节点。
+
+
+
+#### 完全树
+
+所谓完全树，指的是一棵树再进行填写的时候，遵循的是“从左往右，从上往下”
+
+例如下面的这些树，就都是完全树：
+
+![image-20221230135524942](https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-055525.png)
+
+再例如，下面的这些树，就不是完全树：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-055856.png" alt="image-20221230135856627" style="zoom:50%;" />
+
+#### 完全树中的数值
+
+可以分为两大类：
+
+- 最大堆：父节点的数值大于或者等于所有的子节点
+- 最小堆：刚好相反，父节点的数值小于或者等于所有的子节点
+
+最大堆示例：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-060219.png" alt="image-20221230140218584" style="zoom:50%;" />
+
+最小堆示例：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-060339.png" alt="image-20221230140339328" style="zoom:50%;" />
+
+- 无论是最大堆还是最小堆，第一个节点一定是这个堆中最大的或者最小的
+- 每一层并非是按照一定顺序来排列的，比如下面的例子，6可以在左分支，3可以在右分支
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-060935.png" alt="image-20221230140935130" style="zoom:50%;" />
+
+- 每一层的所有元素并非一定比下一层（非自己的子节点）大或者小
+
+
+
+#### 堆的实现
+
+堆一般来讲，可以使用数组来实现
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-061555.png" alt="image-20221230141555180" style="zoom:50%;" />
+
+通过数组，我们可以非常方便的找到一个节点的所有亲属
+
+- 父节点：Math.floor((当前节点的下标 - 1) / 2)
+
+| 子节点 | 父节点 |
+| ------ | ------ |
+| 1      | 0      |
+| 3      | 1      |
+| 4      | 1      |
+| 5      | 2      |
+
+- 左分支节点：当前节点下标 * 2 + 1
+
+| 父节点 | 左分支节点 |
+| ------ | ---------- |
+| 0      | 1          |
+| 1      | 3          |
+| 2      | 5          |
+
+- 右分支节点：当前节点下标 * 2 + 2
+
+| 父节点 | 右分支节点 |
+| ------ | ---------- |
+| 0      | 2          |
+| 1      | 4          |
+| 2      | 6          |
+
+
+
+### react 中对最小堆的应用
+
+在 react 中，最小堆对应的源码在  *SchedulerMinHeap.js* 文件中，总共有 6 个方法，其中向外暴露了 3 个方法
+
+- push：向最小堆推入一个元素
+- pop：弹出一个
+- peek：取出第一个
+
+没有暴露的是：
+
+- siftUp：向上调整
+- siftDown：向下调整
+- compare：这是一个辅助方法，就是两个元素做比较的
+
+所谓向上调整，就是指将一个元素和它的父节点做比较，如果比父节点小，那么就应该和父节点做交换，交换完了之后继续和上一层的父节点做比较，依此类推，直到该元素放置到了正确的位置
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-062926.png" alt="image-20221230142926067" style="zoom:50%;" />
+
+向下调整，就刚好相反，元素往下走，先和左分支进行比较，如果比左分支小，那就交换。
+
+
+
+#### peek
+
+取出堆顶的任务，堆顶一定是最小的
+
+这个方法极其的简单，如下：
+
+```js
+peek(timerQueue);
+export function peek(heap) {
+  // 返回这个数组的第一个元素
+  return heap.length === 0 ? null : heap[0];
+}
+```
+
+
+
+#### push
+
+向最小堆推入一个新任务，因为使用的是数组，所以在推入任务的时候，首先该任务是被推入到数组的最后一项，但是这个时候，涉及到一个调整，我们需要向上调整，把这个任务调整到合适的位置
+
+```js
+push(timerQueue, newTask);
+export function push(heap, node) {
+  const index = heap.length;
+  // 推入到数组的最后一位
+  heap.push(node);
+  // 向上调整，调整到合适的位置
+  siftUp(heap, node, index);
+}
+```
+
+
+
+#### pop
+
+pop 是从任务堆里面弹出第一个任务，也就是意味着该任务已经没有在队列里面了
+
+```js
+pop(taskQueue);
+export function pop(heap) {
+  if (heap.length === 0) {
+    return null;
+  }
+  // 获取数组的第一个任务（一定是最小的）
+  const first = heap[0];
+  // 拿到数组的最后一个
+  const last = heap.pop();
+  if (last !== first) {
+    // 将最后一个任务放到第一个
+    heap[0] = last;
+    // 接下来向下调整
+    siftDown(heap, last, 0);
+  }
+  return first;
+}
+```
+
+具体的调整示意图如下：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2022-12-30-064713.png" alt="image-20221230144713347" style="zoom:50%;" />
+
+
+
+## lane模型
+
+> 思考：为什么要从之前的 expirationTime 模型转换为 lane 模型？
+
+### React 和 Scheduler 优先级的介绍
+
+之前我们已经介绍过 Scheduler，React 团队是打算将 Scheduler 进行独立发布。
+
+在 React 内部，还会有一个粒度更细的优先级算法，这个就是 lane 模型。
+
+接下来我们来看一下两套优先级模型的一个转换。
+
+
+
+在 Scheduler 内部，拥有 5 种优先级：
+
+```js
+export const NoPriority = 0;
+export const ImmediatePriority = 1;
+export const UserBlockingPriority = 2;
+export const NormalPriority = 3;
+export const LowPriority = 4;
+export const IdlePriority = 5;
+```
+
+作为一个独立的包，需要考虑到通用性，Scheduler 和 React 的优先级并不共通，在 React 内部，有四种优先级，如下四种：
+
+```js
+export const DiscreteEventPriority: EventPriority = SyncLane;
+export const ContinuousEventPriority: EventPriority = InputContinuousLane;
+export const DefaultEventPriority: EventPriority = DefaultLane;
+export const IdleEventPriority: EventPriority = IdleLane;
+```
+
+由于 React 中不同的交互对应的事件回调中产生的 update 会有不同的优先级，因此优先级与事件有关，因此在 React 内部的优先级也被称之为 EventPriority，各种优先级的含义如下：
+
+- DiscreteEventPriority：对应离散事件优先级，例如 click、input、focus、blur、touchstart 等事件都是离散触发的
+- ContinuousEventPriority：对应连续事件的优先级，例如 drag、mousemove、scroll、touchmove 等事件都是连续触发的
+- DefaultEventPriority：对应默认的优先级，例如通过计时器周期性触发更新，这种情况下产生的 update 不属于交互产生 update，所以优先级是默认的优先级
+- IdleEventPriority：对应空闲情况的优先级
+
+在上面的代码中，我们还可以观察出一件事情，不同级别的 EventPriority 对应的是不同的 lane
+
+
+
+既然 React 与 Scheduler 优先级不互通，那么这里就会涉及到一个转换的问题，这里分为：
+
+- React 优先级转为 Scheduler 的优先级
+- Scheduler 的优先级转为 React 的优先级
+
+
+
+**React 优先级转为 Scheduler 的优先级**
+
+整体会经历两次转换：
+
+- 首先是将 lanes 转为 EventPriority，涉及到的方法如下：
+
+```js
+export function lanesToEventPriority(lanes: Lanes): EventPriority {
+  // getHighestPriorityLane 方法用于分离出优先级最高的 lane
+  const lane = getHighestPriorityLane(lanes);
+  if (!isHigherEventPriority(DiscreteEventPriority, lane)) {
+    return DiscreteEventPriority;
+  }
+  if (!isHigherEventPriority(ContinuousEventPriority, lane)) {
+    return ContinuousEventPriority;
+  }
+  if (includesNonIdleWork(lane)) {
+    return DefaultEventPriority;
+  }
+  return IdleEventPriority;
+}
+```
+
+- 将 EventPriority 转换为 Scheduler 的优先级，方法如下：
+
+```js
+// ...
+let schedulerPriorityLevel;
+switch (lanesToEventPriority(nextLanes)) {
+  case DiscreteEventPriority:
+    schedulerPriorityLevel = ImmediateSchedulerPriority;
+    break;
+  case ContinuousEventPriority:
+    schedulerPriorityLevel = UserBlockingSchedulerPriority;
+    break;
+  case DefaultEventPriority:
+    schedulerPriorityLevel = NormalSchedulerPriority;
+    break;
+  case IdleEventPriority:
+    schedulerPriorityLevel = IdleSchedulerPriority;
+    break;
+  default:
+    schedulerPriorityLevel = NormalSchedulerPriority;
+    break;
+}
+// ...
+```
+
+举一个例子，假设现在有一个点击事件，在 onClick 中对应有一个回调函数来触发更新，该更新属于 DiscreteEventPriority，经过上面的两套转换规则进行转换之后，最终得到的 Scheduler 对应的优先级就是 ImmediateSchedulerPriority
+
+
+
+**Scheduler 的优先级转为 React 的优先级**
+
+转换相关的代码如下：
+
+```js
+const schedulerPriority = getCurrentSchedulerPriorityLevel();
+switch (schedulerPriority) {
+  case ImmediateSchedulerPriority:
+    return DiscreteEventPriority;
+  case UserBlockingSchedulerPriority:
+    return ContinuousEventPriority;
+  case NormalSchedulerPriority:
+  case LowSchedulerPriority:
+    return DefaultEventPriority;
+  case IdleSchedulerPriority:
+    return IdleEventPriority;
+  default:
+    return DefaultEventPriority;
+}
+```
+
+
+
+这里会涉及到一个问题，在同一时间可能存在很多的更新，究竟先去更新哪一个？
+
+- 从众多的有优先级的 update 中选出一个优先级最高的
+- 表达批的概念
+
+React 在表达方式上面实际上经历了两次迭代：
+
+- 基于 expirationTime 的算法
+- 基于 lane 的算法
+
+
+
+### expirationTime 模型
+
+React 早期采用的就是 expirationTime 的算法，这一点和 Scheduler 里面的设计是一致的。
+
+在 Scheduler 中，设计了 5 种优先级，不同的优先级会对应不同的 timeout，最终会对应不同的 expirationTime，然后 task 根据 expirationTime 来进行任务的排序。
+
+早期的时候在 React 中延续了这种设计，update 的优先级与触发事件的当前时间以及优先级对应的延迟时间相关，这样的算法实际上是比较简单易懂的，每当进入 schedule 的时候，就会选出优先级最高的 update 进行一个调度。
+
+但是这种算法在表示“批”的概念上不够灵活。
+
+在基于 expirationTime 模型的算法中，有如下的表达：
+
+```js
+const isUpdateIncludedInBatch = priorityOfUpdate >= priorityOfBatch;
+```
+
+priorityOfUpdate 表示的是当前 update 的优先级，priorityOfBatch 代表的是**批对应的优先级下限**，也就是说，当前的 update 只要大于等于 priorityOfBatch，就会被划分为同一批：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2023-03-16-032346.png" alt="image-20230316112346465" style="zoom:50%;" />
+
+但是此时就会存在一个问题，如何将某一范围的**某几个优先级**划为同一批？
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2023-03-16-032601.png" alt="image-20230316112601346" style="zoom:50%;" />
+
+在上图中，我们想要将 u1、u2、u3 和 u4 划分为同一批，但是以前的 expirationTime 模型是无法做到的。
+
+究其原因，是因为 expirationTime 模型优先级算法耦合了“优先级”和“批”的概念，限制了模型的表达能力。优先级算法的本质是为 update 进行一个排序，但是 expirationTime 模型在完成排序的同时还默认的划定了“批”。
+
+
+
+### lane 模型
+
+因此，基于上述的原因，React 中引入了 lane 模型。
+
+不管新引入什么模型，比如要保证以下两个问题得到解决：
+
+- 以优先级为依据，对 update 进行一个排序
+- 表达批的概念
+
+
+
+针对第一个问题，lane模型中设置了很多的 lane，每一个lane实际上是一个二进制数，通过二进制来表达优先级，越低的位代表越高的优先级，例如：
+
+```js
+export const SyncLane: Lane = /*                        */ 0b0000000000000000000000000000001;
+export const InputContinuousLane: Lane = /*             */ 0b0000000000000000000000000000100;
+export const DefaultLane: Lane = /*                     */ 0b0000000000000000000000000010000;
+export const IdleLane: Lane = /*                        */ 0b0100000000000000000000000000000;
+export const OffscreenLane: Lane = /*                   */ 0b1000000000000000000000000000000;
+```
+
+在上面的代码中，SyncLane 是最高优先级，OffscreenLane 是最低优先级。
+
+
+
+对于第二个问题，lane模型能够非常灵活的表达批的概念：
+
+```js
+// 要使用的批
+let batch = 0;
+// laneA 和 laneB。是不相邻的优先级
+const laneA = 0b0000000000000000000000001000000;
+const laneB = 0b0000000000000000000000000000001;
+// 将 laneA 纳入批中
+batch |= laneA;
+// 将 laneB 纳入批中
+batch |= laneB;
+```
+
+
+### 总结
+
+> 题目：是否了解过 React 中的 lane 模型？为什么要从之前的 expirationTime 模型转换为 lane 模型？
+>
+> 参考答案：
+>
+> 在 React 中有一套独立的**粒度更细的优先级算法**，这就是 lane 模型。
+>
+> 这是一个基于位运算的算法，每一个 lane 是一个 32 bit Integer，不同的优先级对应了不同的 lane，越低的位代表越高的优先级。
+>
+> 早期的 React 并没有使用 lane 模型，而是采用的的基于 expirationTime 模型的算法，但是这种算法耦合了“优先级”和“批”这两个概念，限制了模型的表达能力。优先级算法的本质是“为 update 排序”，但 expirationTime 模型在完成排序的同时还默认的划定了“批”。
+>
+> 使用 lane 模型就不存在这个问题，因为是基于位运算，所以在批的划分上会更加的灵活。
+
+
+
 # 源码启发-性能优化
 
 ## 性能优化策略之eagerState
@@ -1925,8 +3052,8 @@ returnFiber: Fiber,
 
 **热门文章**
 
-- [✨ 爆肝10w字，带你精通 React18 架构设计和源码实现【上】]()
-- [✨ 爆肝10w字，带你精通 React18 架构设计和源码实现【下】]()
+- [✨ 爆肝10w字，带你精通 React18 架构设计和源码实现【上】](https://juejin.cn/spost/7381371976035532835)
+- [✨ 爆肝10w字，带你精通 React18 架构设计和源码实现【下】](https://juejin.cn/spost/7381395976676196387)
 - [前端包管理进阶：通用函数库与组件库打包实战](https://juejin.cn/post/7376827589909266458)
 - [🍻 前端服务监控原理与手写开源监控框架SDK](https://juejin.cn/post/7374265502669160482)
 - [🚀 2w字带你精通前端脚手架开源工具开发](https://juejin.cn/post/7363607004348989479)
