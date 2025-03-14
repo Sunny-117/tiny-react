@@ -1,6 +1,6 @@
 {
 	"compileOnSave": true,
-	"include": ["./packages/**/*"],
+	"include": ["./packages/**/*", "tutorial/mini-hooks"],
 	"compilerOptions": {
 		"target": "ESNext",
 		"useDefineForClassFields": true,
