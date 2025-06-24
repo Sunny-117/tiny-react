@@ -29,7 +29,7 @@ interface Hook {
 export interface Effect {
 	tag: Flags;
 	create: EffectCallback | null;
-	destory: EffectCallback | null;
+	destory: EffectCallback | void;
 	deps: EffectDeps;
 	next: Effect | null;
 }

@@ -6,10 +6,9 @@ import {
 	createWorkInProgress
 } from './fiber';
 import { REACT_ELEMENT_TYPE, REACT_FRAGMENT_TYPE } from 'shared/ReactSymbols';
-import { HostText } from './workTags';
+import { Fragment, HostText } from './workTags';
 import { ChildDeletion, Placement } from './fiberFlags';
-import { Key } from 'react';
-import { Fragment } from 'react';
+import { Key } from 'shared/ReactTypes';
 
 type ExistingChildren = Map<string | number, FiberNode>;
 
@@ -136,7 +135,7 @@ function ChildReconciler(shouldTrackEffects: boolean) {
 		newChild: any[]
 	) {
 		// 最后一个可复用的fiber在current中的索引位置
-		let lastPlacedIndex: number = 0;
+		let lastPlacedIndex = 0;
 		// 创建的最后一个fiber
 		let lastNewFiber: FiberNode | null = null;
 		// 创建的第一个fiber
@@ -306,6 +305,7 @@ function useFiber(fiber: FiberNode, pendingProps: Props): FiberNode {
 	const clone = createWorkInProgress(fiber, pendingProps);
 	clone.index = 0;
 	clone.sibling = null;
+	return clone;
 }
 // 追踪副作用
 export const reconcilerChildFibers = ChildReconciler(true);

@@ -22,7 +22,8 @@ export const createUpdate = <State>(
 ): Update<State> => {
 	return {
 		action,
-		next: null
+		next: null,
+		lane
 	};
 };
 
