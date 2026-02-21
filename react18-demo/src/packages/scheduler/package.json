@@ -1,0 +1,63 @@
+{
+  "_from": "scheduler@0.21.0-beta-96ca8d915-20211115",
+  "_id": "scheduler@0.21.0-beta-96ca8d915-20211115",
+  "_inBundle": false,
+  "_integrity": "sha512-gm2zVVyjuIHlcqdAv57Tk/lFBf7+RDhYvIEaOZiKf3/YpIZbsiMnfy6yP6+VR3pS//V2LY5Mv8bf6fS+4IOWbg==",
+  "_location": "/scheduler",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "version",
+    "registry": true,
+    "raw": "scheduler@0.21.0-beta-96ca8d915-20211115",
+    "name": "scheduler",
+    "escapedName": "scheduler",
+    "rawSpec": "0.21.0-beta-96ca8d915-20211115",
+    "saveSpec": null,
+    "fetchSpec": "0.21.0-beta-96ca8d915-20211115"
+  },
+  "_requiredBy": [
+    "/react-dom"
+  ],
+  "_resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.21.0-beta-96ca8d915-20211115.tgz",
+  "_shasum": "b15758da1f33734ab1219aa5147ea79037a42013",
+  "_spec": "scheduler@0.21.0-beta-96ca8d915-20211115",
+  "_where": "/Users/sc/Documents/react18-demo/node_modules/react-dom",
+  "browserify": {
+    "transform": [
+      "loose-envify"
+    ]
+  },
+  "bugs": {
+    "url": "https://github.com/facebook/react/issues"
+  },
+  "bundleDependencies": false,
+  "dependencies": {
+    "loose-envify": "^1.1.0",
+    "object-assign": "^4.1.1"
+  },
+  "deprecated": false,
+  "description": "Cooperative scheduler for the browser environment.",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "build-info.json",
+    "index.js",
+    "unstable_mock.js",
+    "unstable_post_task.js",
+    "cjs/",
+    "umd/"
+  ],
+  "homepage": "https://reactjs.org/",
+  "keywords": [
+    "react"
+  ],
+  "license": "MIT",
+  "main": "index.js",
+  "name": "scheduler",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/facebook/react.git",
+    "directory": "packages/scheduler"
+  },
+  "version": "0.21.0-beta-96ca8d915-20211115"
+}

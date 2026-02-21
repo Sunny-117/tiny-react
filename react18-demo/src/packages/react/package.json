@@ -1,0 +1,82 @@
+{
+  "_from": "react@beta",
+  "_id": "react@18.0.0-beta-96ca8d915-20211115",
+  "_inBundle": false,
+  "_integrity": "sha512-Io6qvToVSO1UWNWbJSH16gbgYTkseSbfpQvLaB7JPutt0QVvjpUlEE0nfmww77CFdawxGkyfm/x4zvNTlMkHsw==",
+  "_location": "/react",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "tag",
+    "registry": true,
+    "raw": "react@beta",
+    "name": "react",
+    "escapedName": "react",
+    "rawSpec": "beta",
+    "saveSpec": null,
+    "fetchSpec": "beta"
+  },
+  "_requiredBy": [
+    "#USER",
+    "/"
+  ],
+  "_resolved": "https://registry.npmjs.org/react/-/react-18.0.0-beta-96ca8d915-20211115.tgz",
+  "_shasum": "0b2a0cd808b85fdce987a0c254e0fab979a3828d",
+  "_spec": "react@beta",
+  "_where": "/Users/sc/Documents/react18-demo",
+  "browserify": {
+    "transform": [
+      "loose-envify"
+    ]
+  },
+  "bugs": {
+    "url": "https://github.com/facebook/react/issues"
+  },
+  "bundleDependencies": false,
+  "dependencies": {
+    "loose-envify": "^1.1.0",
+    "object-assign": "^4.1.1"
+  },
+  "deprecated": false,
+  "description": "React is a JavaScript library for building user interfaces.",
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "exports": {
+    ".": {
+      "react-server": "./unstable-shared-subset.js",
+      "default": "./index.js"
+    },
+    "./index": {
+      "react-server": "./unstable-shared-subset.js",
+      "default": "./index.js"
+    },
+    "./build-info.json": "./build-info.json",
+    "./jsx-runtime": "./jsx-runtime.js",
+    "./jsx-dev-runtime": "./jsx-dev-runtime.js",
+    "./": "./"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "build-info.json",
+    "index.js",
+    "cjs/",
+    "umd/",
+    "jsx-runtime.js",
+    "jsx-dev-runtime.js",
+    "unstable-shared-subset.js"
+  ],
+  "homepage": "https://reactjs.org/",
+  "keywords": [
+    "react"
+  ],
+  "license": "MIT",
+  "main": "index.js",
+  "name": "react",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/facebook/react.git",
+    "directory": "packages/react"
+  },
+  "version": "18.0.0-beta-96ca8d915-20211115"
+}
