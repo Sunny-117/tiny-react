@@ -15,7 +15,7 @@ import { HookHasEffect, Passive } from './hookEffectTag';
 
 let currentlyRenderingFiber: FiberNode | null = null;
 let workInProgressHook: null | Hook = null;
-let currentHook: Hook | null = null;
+const currentHook: Hook | null = null;
 
 let renderLane: Lane = NoLane;
 

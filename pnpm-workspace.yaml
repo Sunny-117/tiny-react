@@ -1,3 +1,4 @@
 packages:
   - 'packages/*'
   - 'playground/*'
+  - 'react18-demo'

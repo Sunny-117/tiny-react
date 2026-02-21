@@ -33,7 +33,7 @@ const dispatchEvent = (e: Event, type: string) => {
   if (!ele) {
     return;
   }
-  for (let prop in ele) {
+  for (const prop in ele) {
     if (prop.toLowerCase().includes("fiber")) {
       fiber = (ele as any)[prop];
     }

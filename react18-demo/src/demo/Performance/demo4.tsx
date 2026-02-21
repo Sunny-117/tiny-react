@@ -34,21 +34,21 @@ function Input() {
 
 
 function ExpensiveCpn() {
-  let now = performance.now();
+  const now = performance.now();
   while (performance.now() - now < 100) {}
   console.log('耗时的组件 render');
   return <ExpensiveChild/>;
 }
 
 function ExpensiveChild() {
-  let now = performance.now();
+  const now = performance.now();
   while (performance.now() - now < 100) {}
   console.log('耗时的子组件 render');
   return <ExpensiveGrandChild />;
 }
 
 function ExpensiveGrandChild() {
-  let now = performance.now();
+  const now = performance.now();
   while (performance.now() - now < 100) {}
   console.log('耗时的孙组件 render');
   return <p>耗时的组件</p>;

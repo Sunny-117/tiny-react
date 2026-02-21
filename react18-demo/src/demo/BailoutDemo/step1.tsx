@@ -31,7 +31,7 @@ export default function App() {
 
 function ExpensiveCpn() {
   console.log(3)
-  let now = performance.now();
+  const now = performance.now();
   while (performance.now() - now < 100) {}
   return <p>耗时的组件</p>;
 }
